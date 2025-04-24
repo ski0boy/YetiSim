@@ -16,7 +16,7 @@ Great for futures traders using prop firm accounts like Apex, TPT, and others.
 tabs = st.tabs(["Prop Firm Mode", "Strategy Mode"])
 
 # === TAB 1: Prop Firm Monte Carlo ===
-# [Existing Prop Firm code unchanged for brevity]
+# [Prop Firm tab code remains unchanged]
 
 # === TAB 2: Strategy Monte Carlo ===
 with tabs[1]:
@@ -48,6 +48,14 @@ with tabs[1]:
         avg_loss = st.number_input("Average Loss ($)", value=100, key="strategy_avg_loss")
 
     st.divider()
+
+    enable_rules = st.checkbox("Enable Prop Firm Rules")
+    if enable_rules:
+        st.subheader("📋 Prop Firm Rules")
+        rule_type = st.selectbox("Drawdown Type", ["Trailing", "End-of-Day"], key="rule_type")
+        max_drawdown = st.number_input("Max Drawdown ($)", value=1500, key="rule_drawdown")
+        max_daily_loss = st.number_input("Max Daily Loss ($) [Optional]", value=0, key="rule_daily_loss")
+
     st.subheader("📈 Simulating Strategy Performance")
 
     rr_ratio = avg_win / avg_loss
@@ -56,42 +64,63 @@ with tabs[1]:
     median_balances = []
     worst_balances = []
     pass_target_counts = []
+    fail_counts = []
     all_curves = {}
 
     for risk_pct in risk_values:
         final_results = []
         curves = []
-        hits = 0
+        payouts_hit = 0
+        fails = 0
 
         for _ in range(simulations):
             balance = starting_balance
             curve = [balance]
+            high_water = balance
+            failed = False
             for _ in range(num_trades):
                 risk_amount = balance * (risk_pct / 100)
                 if np.random.rand() < win_rate:
                     balance += risk_amount * rr_ratio
                 else:
                     balance -= risk_amount
+
+                if enable_rules:
+                    if rule_type == "Trailing" and (high_water - balance) > max_drawdown:
+                        failed = True
+                        break
+                    if rule_type == "End-of-Day" and (starting_balance - balance) > max_drawdown:
+                        failed = True
+                        break
+                    if max_daily_loss > 0 and (starting_balance - balance) > max_daily_loss:
+                        failed = True
+                        break
+                high_water = max(high_water, balance)
                 curve.append(balance)
-            final_results.append(balance)
-            if balance >= target_balance:
-                hits += 1
+
+            if not failed:
+                final_results.append(balance)
+                if balance >= target_balance:
+                    payouts_hit += 1
+            else:
+                fails += 1
+
             curves.append(curve)
 
-        median_balances.append(np.median(final_results))
-        worst_balances.append(np.min(final_results))
-        pass_target_counts.append(hits)
+        median_balances.append(np.median(final_results) if final_results else 0)
+        worst_balances.append(np.min(final_results) if final_results else 0)
+        pass_target_counts.append(payouts_hit)
+        fail_counts.append(fails)
         all_curves[risk_pct] = curves
 
-    # Table of results
     strat_df = pd.DataFrame({
         "Risk %": risk_values,
         "Median Final Balance": median_balances,
         "Worst Final Balance": worst_balances,
         "Pass Target": pass_target_counts,
+        "Failed Accounts": fail_counts
     })
 
-    # Plot performance
     st.write("### Risk Curve: Median vs Worst Case")
     fig1, ax1 = plt.subplots()
     ax1.plot(strat_df["Risk %"], strat_df["Median Final Balance"], label="Median", marker='o')
@@ -104,11 +133,9 @@ with tabs[1]:
     ax1.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
     st.pyplot(fig1)
 
-    # Select optimal risk (highest median balance)
     optimal_index = np.argmax(median_balances)
     optimal_risk = risk_values[optimal_index]
 
-    # Plot curves for optimal
     st.subheader(f"Simulated Equity Curves at Optimal Risk %: {optimal_risk:.2f}%")
     opt_curves_df = pd.DataFrame(all_curves[optimal_risk]).T
     fig2, ax2 = plt.subplots(figsize=(10, 5))
@@ -122,7 +149,6 @@ with tabs[1]:
     ax2.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
     st.pyplot(fig2)
 
-    # Output recommendations
     st.subheader("📌 Recommended Position Sizing")
     risk_per_trade = starting_balance * (optimal_risk / 100)
     contracts = risk_per_trade / tick_value
@@ -130,5 +156,7 @@ with tabs[1]:
     st.markdown(f"**Recommended Risk Per Trade:** ${risk_per_trade:,.2f}")
     st.markdown(f"**Contracts (est. using ${tick_value}/tick):** {contracts:.0f} micros or {(contracts / 10):.1f} minis")
     st.markdown(f"**% Chance of Reaching ${target_balance}:** {pass_target_counts[optimal_index] / simulations * 100:.2f}%")
+    if enable_rules:
+        st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[optimal_index] / simulations * 100:.2f}%")
 
 
