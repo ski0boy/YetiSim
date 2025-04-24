@@ -1,3 +1,4 @@
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -5,10 +6,11 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
 st.set_page_config(page_title="YetiSim - SMART Risk Simulator", layout="centered")
-st.title("\U0001F4CA YetiSim: SMART Risk & Position Sizing Simulator")
+st.title("📊 YetiSim: SMART Risk & Position Sizing Simulator")
 
 st.markdown("""
-This simulator helps you determine optimal position sizing based on your strategy's historical performance. It models your equity curve and outputs SMART risk data for both individual traders and prop firm accounts.
+This simulator helps you determine optimal position sizing based on your strategy's historical performance.
+It models your equity curve and outputs SMART risk data for both individual traders and prop firm accounts.
 """)
 
 st.subheader("Simulation Settings")
@@ -25,36 +27,49 @@ with col1:
 with col2:
     avg_loss = st.number_input("Average Loss ($)", value=125.00)
     target_balance = st.number_input("Target Balance ($)", value=4600)
+    kelly_fraction = st.number_input("Kelly Modifier (0.0 to 1.0)", value=0.50, min_value=0.0, max_value=1.0)
+    tick_value = st.number_input("Tick Value ($)", value=5.00)
 
-# === Safety Checks ===
-if simulations < 1 or num_trades < 1:
-    st.error("Number of simulations and trades must be greater than zero.")
-    st.stop()
+st.subheader("Prop Firm Constraints")
+enable_prop_rules = st.checkbox("Enable Prop Firm Rules")
+if enable_prop_rules:
+    max_drawdown = st.number_input("Max Trailing Drawdown ($)", value=1500)
+    max_daily_loss = st.number_input("Max Daily Loss ($)", value=1000)
 
-# === Kelly Calculation ===
-RR = avg_win / avg_loss if avg_loss != 0 else 0
-kelly_percent = max((win_rate - (1 - win_rate) / RR) * 100, 0)
-adjusted_risk_percent = kelly_percent
+RR = avg_win / avg_loss
+kelly_percent = (win_rate - (1 - win_rate) / RR) * 100
+adjusted_risk_percent = max(kelly_percent * kelly_fraction, 0.0)
 risk_per_trade = equity * (adjusted_risk_percent / 100)
 adjusted_risk_per_trade = max(risk_per_trade - commissions, 0)
+contracts = adjusted_risk_per_trade / tick_value
 
-# === Run Simulations ===
-results, peak_equity, min_equity, win_streaks, loss_streaks = [], [], [], [], []
-success_count = fail_count = 0
+results = []
+peak_equity = []
+min_equity = []
+win_streaks = []
+loss_streaks = []
+success_count = 0
+fail_count = 0
 
-for _ in range(int(simulations)):
+for _ in range(simulations):
     balance = equity
-    peak = trough = equity
+    peak = balance
+    trough = balance
+    daily_loss = 0
     longest_win = longest_loss = current_win = current_loss = 0
+    sim_failed = False
 
-    for _ in range(int(num_trades)):
-        outcome = np.random.rand() < win_rate
-        pnl = avg_win if outcome else -avg_loss
-        balance += pnl - commissions
+    for trade in range(int(num_trades)):
+        trade_outcome = np.random.rand() < win_rate
+        pnl = avg_win if trade_outcome else -avg_loss
+        balance += pnl
+        balance -= commissions
+        daily_loss += -pnl if pnl < 0 else 0
+
         peak = max(peak, balance)
         trough = min(trough, balance)
 
-        if outcome:
+        if trade_outcome:
             current_win += 1
             longest_win = max(longest_win, current_win)
             current_loss = 0
@@ -63,53 +78,44 @@ for _ in range(int(simulations)):
             longest_loss = max(longest_loss, current_loss)
             current_win = 0
 
+        if enable_prop_rules:
+            if balance <= 0 or (equity - balance > max_drawdown) or (daily_loss > max_daily_loss):
+                sim_failed = True
+                break
+
     results.append(balance)
     peak_equity.append(peak)
     min_equity.append(trough)
     win_streaks.append(longest_win)
     loss_streaks.append(longest_loss)
+
     if balance >= target_balance:
         success_count += 1
-    if balance <= 0:
+    if sim_failed or balance <= 0:
         fail_count += 1
 
-# === Recommended Position Sizing ===
-st.subheader("\U0001F4CC Recommended Position Sizing")
+st.subheader("📌 Recommended Position Sizing")
 st.markdown(f"**Optimal Risk % (Adjusted Kelly):** {adjusted_risk_percent:.2f}%")
 st.markdown(f"**Risk Per Trade:** ${adjusted_risk_per_trade:.2f}")
+st.markdown(f"**Contracts (est. using ${tick_value}/tick):** {contracts:.0f} micros or {(contracts / 10):.1f} minis")
 
-# === Simulation Results Summary ===
-st.subheader("\U0001F4C9 Simulation Results Summary")
-if results:
-    st.markdown(f"**% Chance of Reaching ${target_balance}:** {success_count / simulations * 100:.2f}%")
-    st.markdown(f"**% Risk of Ruin (Equity ≤ 0):** {fail_count / simulations * 100:.2f}%")
-    st.markdown(f"**Average Final Balance:** ${np.mean(results):,.2f}")
-    st.markdown(f"**Worst Case Balance:** ${np.min(results):,.2f}")
-    st.markdown(f"**Best Case Balance:** ${np.max(results):,.2f}")
-    st.markdown(f"**Longest Win Streak:** {np.max(win_streaks)}")
-    st.markdown(f"**Longest Loss Streak:** {np.max(loss_streaks)}")
-else:
-    st.warning("No results returned. Check input values.")
+st.subheader("📉 Simulation Results Summary")
+st.markdown(f"**% Chance of Reaching ${target_balance}:** {success_count / simulations * 100:.2f}%")
+st.markdown(f"**% Risk of Ruin (Equity ≤ 0):** {fail_count / simulations * 100:.2f}%")
+st.markdown(f"**Average Final Balance:** ${np.mean(results):,.2f}")
+st.markdown(f"**Worst Case Balance:** ${np.min(results):,.2f}")
+st.markdown(f"**Best Case Balance:** ${np.max(results):,.2f}")
+st.markdown(f"**Longest Win Streak:** {np.max(win_streaks)}")
+st.markdown(f"**Longest Loss Streak:** {np.max(loss_streaks)}")
 
-# === Simulation Equity Curve Plot ===
-st.subheader("\U0001F4C8 Sample Simulation Equity Curves")
+# Add chart of all simulation results
+st.subheader("📈 Monte Carlo Simulation Distribution")
 fig, ax = plt.subplots()
-for _ in range(10):
-    balance = equity
-    curve = [balance]
-    for _ in range(int(num_trades)):
-        outcome = np.random.rand() < win_rate
-        pnl = avg_win if outcome else -avg_loss
-        balance += pnl - commissions
-        curve.append(balance)
-    ax.plot(curve, linewidth=0.8, alpha=0.6)
-
-ax.axhline(y=equity, linestyle='--', color='black', label='Starting Balance')
-ax.set_xlabel("Trade #")
-ax.set_ylabel("Equity")
-ax.set_title("Monte Carlo Simulation Equity Curves")
-ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-ax.grid(True)
+ax.hist(results, bins=50, color="skyblue", edgecolor="black")
+ax.set_title("Distribution of Final Balances")
+ax.set_xlabel("Final Account Balance")
+ax.set_ylabel("Frequency")
+ax.xaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
 st.pyplot(fig)
 
 
