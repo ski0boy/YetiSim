@@ -34,6 +34,7 @@ median_balances = []
 worst_balances = []
 payout_counts = []
 fail_counts = []
+risk_dollars = []
 all_curves = {}
 
 for risk_pct in risk_values:
@@ -84,10 +85,12 @@ for risk_pct in risk_values:
     worst_balances.append(np.min(final_results) if final_results else 0)
     payout_counts.append(payouts_hit if prop_mode == "Funded" else 0)
     fail_counts.append(fails)
+    risk_dollars.append(start_balance * (risk_pct / 100))
     all_curves[risk_pct] = curves
 
 opt_df = pd.DataFrame({
     "Risk %": risk_values,
+    "Risk $": risk_dollars,
     "Median Final Balance": median_balances,
     "Worst Final Balance": worst_balances,
     "Payouts Hit" : payout_counts,
@@ -107,48 +110,58 @@ st.pyplot(fig1)
 
 st.write("### Optimization Table")
 st.dataframe(opt_df.style.format({
+    "Risk $": "${:,.2f}",
     "Median Final Balance": "${:,.2f}",
     "Worst Final Balance": "${:,.2f}"
 }))
 
+# === Improved Optimal Risk Selection ===
+valid_idx = [i for i, fail in enumerate(fail_counts) if fail / simulations < 0.1]
+if valid_idx:
+    optimal_index = valid_idx[np.argmax([median_balances[i] for i in valid_idx])]
+else:
+    optimal_index = np.argmax(median_balances)
+optimal_risk = risk_values[optimal_index]
+
 # === Simulated Curves for Optimal Risk ===
-optimal_risk = risk_values[np.argmax(median_balances)]
-risk_dollars = start_balance * (optimal_risk / 100)
 st.subheader(f"Simulated Equity Curves at Optimal Risk %: {optimal_risk:.1f}%")
 
 opt_curves_df = pd.DataFrame(all_curves[optimal_risk]).T
 fig2, ax2 = plt.subplots(figsize=(10, 5))
-for col in opt_curves_df.columns:
-    ax2.plot(opt_curves_df[col], alpha=0.2, linewidth=0.8)
-ax2.axhline(y=start_balance, color='black', linestyle='--', label='Starting Balance')
-ax2.set_xlabel("Trades")
-ax2.set_ylabel("Account Balance")
-ax2.set_title("Monte Carlo Simulation - Optimal Risk")
-ax2.grid(True)
-ax2.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-st.pyplot(fig2)
+if not opt_curves_df.empty:
+    for col in opt_curves_df.columns:
+        ax2.plot(opt_curves_df[col], alpha=0.2, linewidth=0.8)
+    ax2.axhline(y=start_balance, color='black', linestyle='--', label='Starting Balance')
+    ax2.set_xlabel("Trades")
+    ax2.set_ylabel("Account Balance")
+    ax2.set_title("Monte Carlo Simulation - Optimal Risk")
+    ax2.grid(True)
+    ax2.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
+    st.pyplot(fig2)
+else:
+    st.warning("No valid simulations available to plot at this setting.")
 
-finals = opt_curves_df.iloc[-1]
+finals = opt_curves_df.iloc[-1] if not opt_curves_df.empty else []
 st.subheader("Optimal Simulation Summary")
-st.write(pd.DataFrame({
-    "Mean Final Balance": [f"${np.mean(finals):,.2f}"],
-    "Median Final Balance": [f"${np.median(finals):,.2f}"],
-    "Max Final Balance": [f"${np.max(finals):,.2f}"],
-    "Min Final Balance": [f"${np.min(finals):,.2f}"],
-    "% Above $5K": [f"{np.mean(finals > 5000) * 100:.2f}%"],
-    "% Below Starting": [f"{np.mean(finals < start_balance) * 100:.2f}%"]
-}))
+if len(finals):
+    st.write(pd.DataFrame({
+        "Mean Final Balance": [f"${np.mean(finals):,.2f}"],
+        "Median Final Balance": [f"${np.median(finals):,.2f}"],
+        "Max Final Balance": [f"${np.max(finals):,.2f}"],
+        "Min Final Balance": [f"${np.min(finals):,.2f}"],
+        "% Above $5K": [f"{np.mean(finals > 5000) * 100:.2f}%"],
+        "% Below Starting": [f"{np.mean(finals < start_balance) * 100:.2f}%"]
+    }))
 
 # === Recommendation Summary ===
 st.subheader("📌 Recommended Position Sizing")
+risk_dollar = start_balance * (optimal_risk / 100)
 st.markdown(f"**Optimal Risk %:** {optimal_risk:.2f}%")
-st.markdown(f"**Recommended Risk Per Trade:** ${risk_dollars:,.2f}")
-st.markdown(f"**Contracts (est. using $5/pt tick value):** {int(risk_dollars // 100)} micros or {int(risk_dollars // 500)} minis")
+st.markdown(f"**Recommended Risk Per Trade:** ${risk_dollar:,.2f}")
 if prop_mode == "Funded":
-    st.markdown(f"**% Chance of Reaching Payout (${payout_target}):** {payout_counts[np.argmax(median_balances)] / simulations * 100:.2f}%")
+    st.markdown(f"**% Chance of Reaching Payout (${payout_target}):** {payout_counts[optimal_index] / simulations * 100:.2f}%")
 if prop_mode != "None":
-    st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[np.argmax(median_balances)] / simulations * 100:.2f}%")
-
+    st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[optimal_index] / simulations * 100:.2f}%")
 
 
 
