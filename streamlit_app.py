@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
 st.set_page_config(page_title="YetiSim - SMART Risk Simulator", layout="centered")
-st.title("📊 YetiSim: SMART Risk & Position Sizing Simulator")
+st.title("\U0001F4CA YetiSim: SMART Risk & Position Sizing Simulator")
 
 st.markdown("""
 This simulator helps you determine optimal position sizing based on your strategy's historical performance. It models your equity curve and outputs SMART risk data for both individual traders and prop firm accounts.
@@ -25,23 +25,17 @@ with col1:
 with col2:
     avg_loss = st.number_input("Average Loss ($)", value=125.00)
     target_balance = st.number_input("Target Balance ($)", value=4600)
-    kelly_fraction = st.number_input("Kelly Modifier (0.0 to 1.0)", value=0.50, min_value=0.0, max_value=1.0)
-    tick_value = st.number_input("Tick Value ($)", value=5.00)
 
 # Calculate full Kelly %
 RR = avg_win / avg_loss
 kelly_percent = (win_rate - (1 - win_rate) / RR) * 100
-adjusted_risk_percent = max(kelly_percent * kelly_fraction, 0.0)
+adjusted_risk_percent = max(kelly_percent, 0.0)
 risk_per_trade = equity * (adjusted_risk_percent / 100)
 adjusted_risk_per_trade = max(risk_per_trade - commissions, 0)
 
-# Estimate contracts
-contracts = adjusted_risk_per_trade / tick_value
-
 # Run simulations
 results = []
-peak_equity = []
-min_equity = []
+all_curves = []
 win_streaks = []
 loss_streaks = []
 success_count = 0
@@ -49,16 +43,13 @@ fail_count = 0
 
 for _ in range(simulations):
     balance = equity
-    peak = balance
-    trough = balance
+    equity_curve = [balance]
     longest_win = longest_loss = current_win = current_loss = 0
     for _ in range(int(num_trades)):
         trade_outcome = np.random.rand() < win_rate
         pnl = avg_win if trade_outcome else -avg_loss
-        balance += pnl
-        balance -= commissions
-        peak = max(peak, balance)
-        trough = min(trough, balance)
+        balance += pnl - commissions
+        equity_curve.append(balance)
         if trade_outcome:
             current_win += 1
             longest_win = max(longest_win, current_win)
@@ -68,8 +59,7 @@ for _ in range(simulations):
             longest_loss = max(longest_loss, current_loss)
             current_win = 0
     results.append(balance)
-    peak_equity.append(peak)
-    min_equity.append(trough)
+    all_curves.append(equity_curve)
     win_streaks.append(longest_win)
     loss_streaks.append(longest_loss)
     if balance >= target_balance:
@@ -77,13 +67,13 @@ for _ in range(simulations):
     if balance <= 0:
         fail_count += 1
 
-# Display Results
-st.subheader("📌 Recommended Position Sizing")
-st.markdown(f"**Optimal Risk % (Adjusted Kelly):** {adjusted_risk_percent:.2f}%")
+# Recommended Sizing
+st.subheader("\U0001F4CC Recommended Position Sizing")
+st.markdown(f"**Optimal Risk % (Kelly):** {adjusted_risk_percent:.2f}%")
 st.markdown(f"**Risk Per Trade:** ${adjusted_risk_per_trade:.2f}")
-st.markdown(f"**Contracts (est. using ${tick_value}/tick):** {contracts:.0f} micros or {(contracts / 10):.1f} minis")
 
-st.subheader("📉 Simulation Results Summary")
+# Results Summary
+st.subheader("\U0001F4C9 Simulation Results Summary")
 st.markdown(f"**% Chance of Reaching ${target_balance}:** {success_count / simulations * 100:.2f}%")
 st.markdown(f"**% Risk of Ruin (Equity ≤ 0):** {fail_count / simulations * 100:.2f}%")
 st.markdown(f"**Average Final Balance:** ${np.mean(results):,.2f}")
@@ -92,6 +82,18 @@ st.markdown(f"**Best Case Balance:** ${np.max(results):,.2f}")
 st.markdown(f"**Longest Win Streak:** {np.max(win_streaks)}")
 st.markdown(f"**Longest Loss Streak:** {np.max(loss_streaks)}")
 
+# Plot simulation equity curves
+st.subheader("\U0001F4C8 Simulated Equity Curves")
+fig, ax = plt.subplots(figsize=(10, 5))
+for curve in all_curves:
+    ax.plot(curve, alpha=0.15, linewidth=0.8)
+ax.axhline(y=equity, color='black', linestyle='--', label='Starting Balance')
+ax.set_xlabel("Trades")
+ax.set_ylabel("Account Balance")
+ax.set_title("Monte Carlo Simulation - Equity Paths")
+ax.grid(True)
+ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
+st.pyplot(fig)
 
 
 
