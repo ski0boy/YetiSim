@@ -94,3 +94,4 @@ st.markdown(f"**Longest Loss Streak:** {np.max(loss_streaks)}")
 
 
 
+
