@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 
 st.set_page_config(page_title="YetiSim - Prop Firm Monte Carlo Simulator", layout="centered")
 st.title("📊 YetiSim: Prop Firm Monte Carlo Simulator")
@@ -101,6 +102,7 @@ ax1.set_ylabel("Final Balance ($)")
 ax1.set_title("Optimal Risk % - Median vs Worst Case")
 ax1.legend()
 ax1.grid(True)
+ax1.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
 st.pyplot(fig1)
 
 st.write("### Optimization Table")
@@ -111,6 +113,7 @@ st.dataframe(opt_df.style.format({
 
 # === Simulated Curves for Optimal Risk ===
 optimal_risk = risk_values[np.argmax(median_balances)]
+risk_dollars = start_balance * (optimal_risk / 100)
 st.subheader(f"Simulated Equity Curves at Optimal Risk %: {optimal_risk:.1f}%")
 
 opt_curves_df = pd.DataFrame(all_curves[optimal_risk]).T
@@ -122,6 +125,7 @@ ax2.set_xlabel("Trades")
 ax2.set_ylabel("Account Balance")
 ax2.set_title("Monte Carlo Simulation - Optimal Risk")
 ax2.grid(True)
+ax2.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
 st.pyplot(fig2)
 
 finals = opt_curves_df.iloc[-1]
@@ -134,6 +138,16 @@ st.write(pd.DataFrame({
     "% Above $5K": [f"{np.mean(finals > 5000) * 100:.2f}%"],
     "% Below Starting": [f"{np.mean(finals < start_balance) * 100:.2f}%"]
 }))
+
+# === Recommendation Summary ===
+st.subheader("📌 Recommended Position Sizing")
+st.markdown(f"**Optimal Risk %:** {optimal_risk:.2f}%")
+st.markdown(f"**Recommended Risk Per Trade:** ${risk_dollars:,.2f}")
+st.markdown(f"**Contracts (est. using $5/pt tick value):** {int(risk_dollars // 100)} micros or {int(risk_dollars // 500)} minis")
+if prop_mode == "Funded":
+    st.markdown(f"**% Chance of Reaching Payout (${payout_target}):** {payout_counts[np.argmax(median_balances)] / simulations * 100:.2f}%")
+if prop_mode != "None":
+    st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[np.argmax(median_balances)] / simulations * 100:.2f}%")
 
 
 
