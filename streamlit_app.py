@@ -1,118 +1,118 @@
-
 import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
 
-st.set_page_config(page_title="YetiSim - Prop Firm Monte Carlo Simulator", layout="centered")
-st.title("📊 YetiSim: Prop Firm Monte Carlo Simulator")
+st.set_page_config(page_title="YetiSim - Risk-Based Position Sizing Simulator", layout="centered")
+st.title("📊 YetiSim: SMART Risk & Position Sizing Simulator")
 
 st.markdown("""
-This simulator helps you test the performance of your trading strategy using Monte Carlo simulations.
-Use your strategy’s average win/loss, win rate, and a risk % to find optimal position sizing.
-Great for futures traders using prop firm accounts like Apex, TPT, and others.
+This simulator helps you determine optimal position sizing based on your strategy's historical performance.
+It models your equity curve and outputs SMART risk data for both individual traders and prop firm accounts.
 """)
 
+# === INPUTS ===
 st.header("Simulation Settings")
 
-# Inputs
 col1, col2 = st.columns(2)
 with col1:
-    start_balance = st.number_input("Starting Balance", value=2000)
-    num_trades = st.number_input("Number of Trades", value=50)
-    win_rate = st.slider("Win Rate (%)", 0, 100, 48) / 100
-    avg_win = st.number_input("Average Win ($)", value=363.0)
-    simulations = st.number_input("# of Simulations", value=1000)
+    equity = st.number_input("Equity Balance / Drawdown Limit ($)", value=2000)
+    avg_win = st.number_input("Average Win ($)", value=250.0)
+    win_rate = st.number_input("Win Rate (%)", value=50.0, min_value=0.0, max_value=100.0) / 100
+    rt_commission = st.number_input("Round-Turn Commissions ($)", value=4.0)
+    num_trades = st.number_input("Number of Future Trades", value=50, min_value=10)
+
 with col2:
-    avg_loss = st.number_input("Average Loss ($)", value=165.0)
-    target_balance = st.number_input("Target Balance ($)", value=5000)
-    prop_mode = st.selectbox("Prop Firm Mode", ["None", "Evaluation", "Funded"])
-    drawdown_limit = st.number_input("Max Drawdown ($)", value=1500)
-    tick_value = st.number_input("Tick Value ($)", value=5.00)
+    avg_loss = st.number_input("Average Loss ($)", value=125.0)
+    sim_count = st.number_input("# of Simulations", value=1000, step=500)
+    target_balance = st.number_input("Target Balance ($)", value=4600)
+    kelly_mult = st.number_input("Kelly Modifier (0.0 to 1.0)", value=0.5, min_value=0.0, max_value=1.0)
+    tick_value = st.number_input("Tick Value ($)", value=5.0)
 
+# === COMPUTATION ===
 rr_ratio = avg_win / avg_loss
-risk_values = np.arange(0.5, 20.5, 0.5)
+win_prob = win_rate
+loss_prob = 1 - win_rate
 
-median_balances, worst_balances, target_hits, fail_counts, all_curves = [], [], [], [], {}
+# Kelly formula (adjusted)
+kelly_fraction = ((win_prob * avg_win) - (loss_prob * avg_loss)) / (avg_win * avg_loss)
+k_risk_pct = max(0.0, min(kelly_fraction * 100 * kelly_mult, 100.0))
+risk_per_trade = equity * (k_risk_pct / 100)
+contracts = risk_per_trade / tick_value
 
-for risk_pct in risk_values:
-    final_results, curves = [], []
-    hits, fails = 0, 0
-    for _ in range(simulations):
-        balance = start_balance
-        high_water = balance
-        failed = False
-        curve = [balance]
-        for _ in range(num_trades):
-            risk_amount = balance * (risk_pct / 100)
-            balance += risk_amount * rr_ratio if np.random.rand() < win_rate else -risk_amount
-            if prop_mode == "Evaluation" and (high_water - balance) > drawdown_limit:
-                failed = True
-                break
-            if prop_mode == "Funded" and (start_balance - balance) > drawdown_limit:
-                failed = True
-                break
-            high_water = max(high_water, balance)
-            curve.append(balance)
-        if not failed:
-            final_results.append(balance)
-            if balance >= target_balance:
-                hits += 1
+# === SIMULATION ===
+results = []
+max_eq, min_eq = [], []
+win_streaks, loss_streaks = [], []
+hit_target, hit_failure = 0, 0
+
+for _ in range(int(sim_count)):
+    bal = equity
+    peak = bal
+    floor = bal
+    curve = [bal]
+    wins, losses = 0, 0
+    max_win_streak, max_loss_streak = 0, 0
+    curr_win, curr_loss = 0, 0
+
+    for _ in range(int(num_trades)):
+        if np.random.rand() < win_prob:
+            pnl = avg_win - rt_commission
+            curr_win += 1
+            curr_loss = 0
         else:
-            fails += 1
-        curves.append(curve)
-    median_balances.append(np.median(final_results) if final_results else 0)
-    worst_balances.append(np.min(final_results) if final_results else 0)
-    target_hits.append(hits)
-    fail_counts.append(fails)
-    all_curves[risk_pct] = curves
+            pnl = -avg_loss - rt_commission
+            curr_loss += 1
+            curr_win = 0
 
-df = pd.DataFrame({
-    "Risk %": risk_values,
-    "Median Final Balance": median_balances,
-    "Worst Final Balance": worst_balances,
-    "Payouts Hit": target_hits,
-    "Failed Accounts": fail_counts
-})
+        max_win_streak = max(max_win_streak, curr_win)
+        max_loss_streak = max(max_loss_streak, curr_loss)
 
-# Optimization chart
-st.subheader("📈 Optimal Risk % - Median vs Worst Case")
-fig, ax = plt.subplots()
-ax.plot(df["Risk %"], df["Median Final Balance"], label="Median", marker='o')
-ax.plot(df["Risk %"], df["Worst Final Balance"], label="Worst Case", linestyle='--', marker='x')
-ax.set_xlabel("Risk Per Trade (%)")
-ax.set_ylabel("Final Balance ($)")
+        bal += pnl * (risk_per_trade / (avg_win if pnl > 0 else avg_loss))
+        peak = max(peak, bal)
+        floor = min(floor, bal)
+        curve.append(bal)
+
+    results.append(curve[-1])
+    max_eq.append(peak)
+    min_eq.append(floor)
+    win_streaks.append(max_win_streak)
+    loss_streaks.append(max_loss_streak)
+    if curve[-1] >= target_balance:
+        hit_target += 1
+    if floor <= 0:
+        hit_failure += 1
+
+# === OUTPUT ===
+st.subheader("📌 Recommended Position Sizing")
+st.markdown(f"**Optimal Risk % (Adjusted Kelly):** {k_risk_pct:.2f}%")
+st.markdown(f"**Risk Per Trade:** ${risk_per_trade:,.2f}")
+st.markdown(f"**Contracts (est. using ${tick_value}/tick):** {contracts:.0f} micros or {(contracts / 10):.1f} minis")
+
+st.subheader("📈 Simulation Results Summary")
+st.markdown(f"**% Chance of Reaching ${target_balance}:** {hit_target / sim_count * 100:.2f}%")
+st.markdown(f"**% Risk of Ruin (Equity <= 0):** {hit_failure / sim_count * 100:.2f}%")
+st.markdown(f"**Average Final Balance:** ${np.mean(results):,.2f}")
+st.markdown(f"**Worst Case Balance:** ${np.min(min_eq):,.2f}")
+st.markdown(f"**Best Case Balance:** ${np.max(max_eq):,.2f}")
+
+st.markdown(f"**Longest Win Streak:** {np.max(win_streaks)}")
+st.markdown(f"**Longest Loss Streak:** {np.max(loss_streaks)}")
+
+# === Chart ===
+st.subheader("📉 Simulated Equity Curves (Sample)")
+sample_curves = pd.DataFrame([np.linspace(equity, result, num=int(num_trades)+1) for result in results[:25]]).T
+fig, ax = plt.subplots(figsize=(10, 5))
+for col in sample_curves.columns:
+    ax.plot(sample_curves[col], alpha=0.3)
+ax.axhline(y=equity, linestyle='--', color='black', label='Starting Balance')
+ax.axhline(y=target_balance, linestyle=':', color='green', label='Target Balance')
+ax.set_title("Monte Carlo Simulated Equity Paths")
+ax.set_xlabel("Trades")
+ax.set_ylabel("Balance ($)")
 ax.legend()
 ax.grid(True)
-ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
 st.pyplot(fig)
-
-# Equity Curves
-optimal_index = np.argmax(median_balances)
-optimal_risk = risk_values[optimal_index]
-st.subheader(f"Simulated Equity Curves at Optimal Risk %: {optimal_risk:.2f}%")
-opt_curves_df = pd.DataFrame(all_curves[optimal_risk]).T
-fig2, ax2 = plt.subplots(figsize=(10, 5))
-for col in opt_curves_df.columns:
-    ax2.plot(opt_curves_df[col], alpha=0.2, linewidth=0.8)
-ax2.axhline(y=start_balance, color='black', linestyle='--', label='Starting Balance')
-ax2.set_xlabel("Trades")
-ax2.set_ylabel("Account Balance")
-ax2.set_title("Monte Carlo Simulation - Optimal Risk")
-ax2.grid(True)
-ax2.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-st.pyplot(fig2)
-
-# Recommended sizing
-st.subheader("📌 Recommended Position Sizing")
-risk_dollar = start_balance * (optimal_risk / 100)
-st.markdown(f"**Optimal Risk %:** {optimal_risk:.2f}%")
-st.markdown(f"**Risk Per Trade:** ${risk_dollar:,.2f}")
-st.markdown(f"**Contracts (est. using ${tick_value}/tick):** {risk_dollar / tick_value:.0f} micros or {(risk_dollar / tick_value / 10):.1f} minis")
-st.markdown(f"**% Chance of Reaching ${target_balance}:** {target_hits[optimal_index] / simulations * 100:.2f}%")
-if prop_mode != "None":
-    st.markdown(f"**% Risk of Failure:** {fail_counts[optimal_index] / simulations * 100:.2f}%")
 
 
 
