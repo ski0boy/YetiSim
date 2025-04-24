@@ -15,14 +15,14 @@ Great for futures traders using prop firm accounts like Apex, TPT, and others.
 tabs = st.tabs(["Simulator", "Optimize Position Size"])
 
 # === Shared Inputs ===
-def get_shared_inputs(prefix=""):
+def get_shared_inputs(prefix="", include_risk_pct=True):
     start_balance = st.sidebar.number_input("Starting Balance", value=2000, key=f"{prefix}_start_balance")
     num_trades = st.sidebar.number_input("Number of Trades", value=200, step=10, key=f"{prefix}_num_trades")
     win_rate = st.sidebar.slider("Win Rate (%)", 0, 100, 48, key=f"{prefix}_win_rate")
     avg_win = st.sidebar.number_input("Average Win ($)", value=363.0, key=f"{prefix}_avg_win")
     avg_loss = st.sidebar.number_input("Average Loss ($)", value=165.0, key=f"{prefix}_avg_loss")
-    risk_pct = st.sidebar.slider("Risk Per Trade (%)", 1, 10, 2, key=f"{prefix}_risk_pct")
     simulations = st.sidebar.number_input("# of Simulations", value=1000, step=100, key=f"{prefix}_simulations")
+    risk_pct = st.sidebar.slider("Risk Per Trade (%)", 1, 10, 2, key=f"{prefix}_risk_pct") if include_risk_pct else None
     return start_balance, num_trades, win_rate / 100, avg_win, avg_loss, risk_pct, simulations
 
 # === TAB 1: Simulator ===
@@ -71,11 +71,13 @@ with tabs[0]:
 # === TAB 2: Optimize Position Size ===
 with tabs[1]:
     st.subheader("Optimize Position Size")
-    start_balance, num_trades, win_prob, avg_win, avg_loss, _, simulations = get_shared_inputs("opt")
-    rr_ratio = avg_win / avg_loss
+    st.markdown("_This analysis tests a range of risk levels per trade to find the best performing balance growth._")
 
     risk_range = st.slider("Risk % Range", 0.5, 10.0, (0.5, 5.0), step=0.5)
     risk_values = np.arange(risk_range[0], risk_range[1] + 0.5, 0.5)
+
+    start_balance, num_trades, win_prob, avg_win, avg_loss, _, simulations = get_shared_inputs("opt", include_risk_pct=False)
+    rr_ratio = avg_win / avg_loss
 
     median_balances = []
     worst_balances = []
@@ -111,7 +113,6 @@ with tabs[1]:
         "Median Final Balance": "${:,.2f}",
         "Worst Final Balance": "${:,.2f}"
     }))
-
 
 
 
