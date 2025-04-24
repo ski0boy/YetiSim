@@ -16,13 +16,13 @@ tabs = st.tabs(["Simulator", "Optimize Position Size"])
 
 # === Shared Inputs ===
 def get_shared_inputs():
-    start_balance = st.sidebar.number_input("Starting Balance", value=2000)
-    num_trades = st.sidebar.number_input("Number of Trades", value=200, step=10)
-    win_rate = st.sidebar.slider("Win Rate (%)", 0, 100, 48)
-    avg_win = st.sidebar.number_input("Average Win ($)", value=363.0)
-    avg_loss = st.sidebar.number_input("Average Loss ($)", value=165.0)
-    risk_pct = st.sidebar.slider("Risk Per Trade (%)", 1, 10, 2)
-    simulations = st.sidebar.number_input("# of Simulations", value=1000, step=100)
+    start_balance = st.sidebar.number_input("Starting Balance", value=2000, key="start_balance")
+    num_trades = st.sidebar.number_input("Number of Trades", value=200, step=10, key="num_trades")
+    win_rate = st.sidebar.slider("Win Rate (%)", 0, 100, 48, key="win_rate")
+    avg_win = st.sidebar.number_input("Average Win ($)", value=363.0, key="avg_win")
+    avg_loss = st.sidebar.number_input("Average Loss ($)", value=165.0, key="avg_loss")
+    risk_pct = st.sidebar.slider("Risk Per Trade (%)", 1, 10, 2, key="risk_pct")
+    simulations = st.sidebar.number_input("# of Simulations", value=1000, step=100, key="simulations")
     return start_balance, num_trades, win_rate / 100, avg_win, avg_loss, risk_pct, simulations
 
 # === TAB 1: Simulator ===
@@ -111,4 +111,5 @@ with tabs[1]:
         "Median Final Balance": "${:,.2f}",
         "Worst Final Balance": "${:,.2f}"
     }))
+
 
