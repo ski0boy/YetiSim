@@ -124,8 +124,6 @@ with tabs[0]:
     if prop_mode != "None":
         st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[optimal_index] / simulations * 100:.2f}%")
 
-...
-
 # === TAB 2: Strategy Monte Carlo ===
 with tabs[1]:
     st.header("Strategy-Specific Monte Carlo")
