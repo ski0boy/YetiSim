@@ -11,48 +11,86 @@ This simulator helps you test the performance of your trading strategy over time
 Great for futures traders using prop firm accounts like Apex, TPT, and others.
 """)
 
-# === Shared Inputs ===
-def get_shared_inputs():
-    st.sidebar.header("Strategy Assumptions")
-    start_balance = st.sidebar.number_input("Starting Balance", value=2000, key="start_balance")
-    num_trades = st.sidebar.number_input("Number of Future Trades", value=50, step=10, key="num_trades")
-    win_rate = st.sidebar.slider("Win Rate (%)", 0, 100, 48, key="win_rate") / 100
-    avg_win = st.sidebar.number_input("Average Win ($)", value=363.0, key="avg_win")
-    avg_loss = st.sidebar.number_input("Average Loss ($)", value=165.0, key="avg_loss")
-    simulations = st.sidebar.number_input("# of Simulations", value=1000, step=100, key="simulations")
-    return start_balance, num_trades, win_rate, avg_win, avg_loss, simulations
+# === Sidebar Inputs ===
+st.sidebar.header("Strategy Assumptions")
+start_balance = st.sidebar.number_input("Starting Balance", value=2000, key="start_balance")
+num_trades = st.sidebar.number_input("Number of Future Trades", value=50, step=10, key="num_trades")
+win_rate = st.sidebar.slider("Win Rate (%)", 0, 100, 48, key="win_rate") / 100
+avg_win = st.sidebar.number_input("Average Win ($)", value=363.0, key="avg_win")
+avg_loss = st.sidebar.number_input("Average Loss ($)", value=165.0, key="avg_loss")
+simulations = st.sidebar.number_input("# of Simulations", value=1000, step=100, key="simulations")
 
-# === Main Tab ===
-st.subheader("Optimal Position Size Simulation")
+st.sidebar.header("Prop Firm Mode")
+prop_mode = st.sidebar.selectbox("Account Type", ["None", "Evaluation", "Funded"], key="account_type")
+drawdown_limit = st.sidebar.number_input("Max Trailing Drawdown ($)", value=1500, key="max_drawdown") if prop_mode != "None" else None
+payout_target = st.sidebar.number_input("Payout Target ($)", value=5000, step=500, key="payout_target") if prop_mode == "Funded" else None
 
-start_balance, num_trades, win_prob, avg_win, avg_loss, simulations = get_shared_inputs()
+# === Core Calculations ===
 rr_ratio = avg_win / avg_loss
-risk_values = np.arange(0.5, 10.5, 0.5)
+risk_values = np.arange(0.5, 20.5, 0.5)
 
 median_balances = []
 worst_balances = []
+payout_counts = []
+fail_counts = []
 all_curves = {}
 
 for risk_pct in risk_values:
     final_results = []
     curves = []
+    payouts_hit = 0
+    fails = 0
+
     for _ in range(simulations):
         balance = start_balance
+        high_water = start_balance
         curve = [balance]
+        hit_payout = False
+        violated_drawdown = False
+
         for _ in range(num_trades):
             risk_amount = balance * (risk_pct / 100)
-            balance += risk_amount * rr_ratio if np.random.rand() < win_prob else -risk_amount
+            if np.random.rand() < win_rate:
+                balance += risk_amount * rr_ratio
+            else:
+                balance -= risk_amount
+
             curve.append(balance)
-        final_results.append(balance)
+            high_water = max(high_water, balance)
+
+            if prop_mode != "None":
+                if prop_mode == "Evaluation" and drawdown_limit is not None:
+                    if (high_water - balance) > drawdown_limit:
+                        violated_drawdown = True
+                        break
+                elif prop_mode == "Funded" and drawdown_limit is not None:
+                    if (start_balance - balance) > drawdown_limit:
+                        violated_drawdown = True
+                        break
+                if prop_mode == "Funded" and payout_target is not None and balance >= payout_target:
+                    hit_payout = True
+
+        if not violated_drawdown:
+            final_results.append(balance)
+            if prop_mode == "Funded" and hit_payout:
+                payouts_hit += 1
+        else:
+            fails += 1
+
         curves.append(curve)
-    median_balances.append(np.median(final_results))
-    worst_balances.append(np.min(final_results))
+
+    median_balances.append(np.median(final_results) if final_results else 0)
+    worst_balances.append(np.min(final_results) if final_results else 0)
+    payout_counts.append(payouts_hit if prop_mode == "Funded" else 0)
+    fail_counts.append(fails)
     all_curves[risk_pct] = curves
 
 opt_df = pd.DataFrame({
     "Risk %": risk_values,
     "Median Final Balance": median_balances,
-    "Worst Final Balance": worst_balances
+    "Worst Final Balance": worst_balances,
+    "Payouts Hit" : payout_counts,
+    "Failed Accounts": fail_counts
 })
 
 fig1, ax1 = plt.subplots()
