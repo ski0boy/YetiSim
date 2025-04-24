@@ -164,20 +164,37 @@ with tabs[0]:
     if prop_mode != "None":
         st.markdown(f"**% Risk of Account Failure (Drawdown):** {fail_counts[optimal_index] / simulations * 100:.2f}%")
 
-# === TAB 2: Strategy Monte Carlo Placeholder ===
+# === TAB 2: Strategy Monte Carlo Builder ===
 with tabs[1]:
-    st.header("Strategy-Specific Monte Carlo (Coming Soon)")
+    st.header("Strategy-Specific Monte Carlo")
+
     st.markdown("""
-    You'll be able to select a futures instrument (ES, MES, NQ, MNQ, YM, MYM, NG, MNG), 
-    upload your backtest data or enter strategy metrics from TradingView,
-    and run Monte Carlo simulations tailored to that strategy.
-
-    ✅ Recommended contract sizing
-    ✅ Probability of reaching payout targets
-    ✅ Survival rates vs prop firm rules
-    ✅ Per-instrument tick value handling
-
-    Let’s build this together. 🚀
+    Use your backtest results to simulate realistic position sizing and payout probability based on your actual strategy performance.
     """)
+
+    instruments = {
+        "ES": 12.50,
+        "MES": 1.25,
+        "NQ": 20.00,
+        "MNQ": 2.00,
+        "YM": 5.00,
+        "MYM": 0.50,
+        "NG": 10.00,
+        "MNG": 2.50
+    }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        instrument = st.selectbox("Futures Instrument", options=list(instruments.keys()))
+        tick_value = instruments[instrument]
+        st.number_input("Starting Balance", value=2000, key="strategy_start")
+
+    with col2:
+        win_rate = st.slider("Win Rate (%)", 0, 100, 50, key="strategy_win") / 100
+        avg_win = st.number_input("Average Win ($)", value=200, key="strategy_avg_win")
+        avg_loss = st.number_input("Average Loss ($)", value=100, key="strategy_avg_loss")
+
+    st.info("This feature will allow uploading TradingView exports, setting risk % per trade, and returning recommended contract sizes and payout odds.")
+
     
 
